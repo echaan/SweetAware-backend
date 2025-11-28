@@ -55,178 +55,154 @@ const getArticles = async (request, h) => {
 
     // Get API key from config or environment variable
     const API_KEY = process.env.NEWS_API_KEY || config.NEWS_API_KEY;
-    
     if (!API_KEY || API_KEY === "sample_news_api_key") {
-      console.log("Using mock data (API key not configured)");
-      return returnMockArticles(h, topic, limit);
+      console.log("Using mock data for articles (no valid API key)");
+
+      // Mock data for testing
+      const mockArticles = [
+        {
+          title: "Cara Mengontrol Gula Darah Secara Alami",
+          summary:
+            "Berikut adalah beberapa tips alami untuk menjaga kadar gula darah tetap stabil...",
+          url: "https://news.example.com/artikel-diabetes-1",
+          source: "Healthline",
+          publishedAt: "2025-05-28T12:00:00Z",
+          imageUrl: "https://example.com/images/diabetes-care.jpg",
+        },
+        {
+          title: "10 Makanan yang Baik untuk Penderita Diabetes",
+          summary:
+            "Diet sehat merupakan kunci pengelolaan diabetes. Artikel ini membahas makanan yang dapat membantu mengontrol gula darah...",
+          url: "https://news.example.com/artikel-diabetes-2",
+          source: "Medical News Today",
+          publishedAt: "2025-05-25T09:30:00Z",
+          imageUrl: "https://example.com/images/diabetes-food.jpg",
+        },
+        {
+          title: "Penelitian Terbaru Tentang Pengobatan Diabetes",
+          summary:
+            "Para peneliti menemukan pendekatan baru untuk mengelola diabetes tipe 2 yang menjanjikan...",
+          url: "https://news.example.com/artikel-diabetes-3",
+          source: "Journal of Endocrinology",
+          publishedAt: "2025-05-20T14:45:00Z",
+          imageUrl: "https://example.com/images/diabetes-research.jpg",
+        },
+        {
+          title: "Olahraga yang Direkomendasikan untuk Penderita Diabetes",
+          summary:
+            "Aktivitas fisik yang tepat dapat membantu mengelola kadar gula darah. Berikut adalah rekomendasi olahraga untuk penderita diabetes...",
+          url: "https://news.example.com/artikel-diabetes-4",
+          source: "Sports Medicine Today",
+          publishedAt: "2025-05-18T10:15:00Z",
+          imageUrl: "https://example.com/images/diabetes-exercise.jpg",
+        },
+        {
+          title: "Hubungan Stres dan Diabetes",
+          summary:
+            "Stres dapat memperburuk kondisi diabetes. Pelajari cara mengelola stres untuk kesehatan yang lebih baik...",
+          url: "https://news.example.com/artikel-diabetes-5",
+          source: "Psychology Today",
+          publishedAt: "2025-05-15T16:30:00Z",
+          imageUrl: "https://example.com/images/stress-diabetes.jpg",
+        },
+      ];
+
+      // Filter based on topic and limit
+      const filteredArticles = filterArticles(mockArticles, topic, limit);
+
+      // Store in cache for future requests
+      cache.articles = mockArticles;
+      cache.timestamp = Date.now();
+
+      return h.response(filteredArticles);
+    } // Construct API URL with better search terms based on topic
+    let searchQuery = topic;
+
+    // If topic is not specified or is 'diabetes', add more relevant terms
+    if (!topic || topic === "diabetes") {
+      searchQuery = 'diabetes OR "gula darah" OR "kencing manis" OR diabetik';
+      console.log("Menampilkan artikel diabetes (default)");
+    } else {
+      // For other topics, add health-related context
+      searchQuery = `${topic} AND (kesehatan OR penyakit OR pengobatan OR pencegahan)`;
     }
 
-    // Try to fetch from News API
-    try {
-      // Construct API URL - use 'everything' endpoint for better results
-      let searchQuery = topic;
+    const apiUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(
+      searchQuery
+    )}&language=id&sortBy=publishedAt&apiKey=${API_KEY}`;
+    console.log(`Fetching articles with query: ${searchQuery}`);
 
-      // If topic is not specified or is 'diabetes', add more relevant terms
-      if (!topic || topic === "diabetes") {
-        searchQuery = "diabetes";
-        console.log("Menampilkan artikel diabetes (default)");
-      }
+    // Fetch articles
+    const response = await axios.get(apiUrl);
 
-      // Use 'everything' endpoint instead of 'top-headlines' for more results
-      const apiUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(
-        searchQuery
-      )}&language=id&sortBy=publishedAt&pageSize=50&apiKey=${API_KEY}`;
-      
-      console.log(`Fetching articles with query: ${searchQuery}`);
+    if (response.data && response.data.articles) {
+      // Format articles to match the expected output
+      const formattedArticles = response.data.articles.map((article) => ({
+        title: article.title,
+        summary: article.description || article.content,
+        url: article.url,
+        source: article.source?.name || "Unknown",
+        publishedAt: article.publishedAt,
+        imageUrl: article.urlToImage,
+      }));
 
-      // Fetch articles
-      const response = await axios.get(apiUrl, { timeout: 10000 });
+      // Store in cache
+      cache.articles = formattedArticles;
+      cache.timestamp = Date.now();
 
-      if (response.data && response.data.articles && response.data.articles.length > 0) {
-        // Format articles to match the expected output
-        const formattedArticles = response.data.articles
-          .filter(article => article.title && article.title !== "[Removed]") // Filter out removed articles
-          .map((article) => ({
-            title: article.title,
-            summary: article.description || article.content || "Tidak ada ringkasan tersedia",
-            url: article.url,
-            source: article.source?.name || "Unknown",
-            publishedAt: article.publishedAt,
-            imageUrl: article.urlToImage,
-          }));
+      // Filter based on topic and limit
+      const filteredArticles = filterArticles(formattedArticles, topic, limit);
 
-        // Store in cache
-        cache.articles = formattedArticles;
-        cache.timestamp = Date.now();
-
-        console.log(`Found ${formattedArticles.length} articles from News API`);
-
-        // Filter based on topic and limit
-        const filteredArticles = filterArticles(formattedArticles, topic, limit);
-
-        return h.response(filteredArticles);
-      } else {
-        console.log("No articles from News API, using mock data");
-        return returnMockArticles(h, topic, limit);
-      }
-    } catch (apiError) {
-      console.error("News API Error:", apiError.message);
-      
-      // Handle specific API errors
-      if (apiError.response) {
-        const status = apiError.response.status;
-        console.log(`API Response Status: ${status}`);
-
-        if (status === 429) {
-          console.log("Rate limit reached, using mock data");
-          return returnMockArticles(h, topic, limit);
-        } else if (status === 401) {
-          console.log("Invalid API key, using mock data");
-          return returnMockArticles(h, topic, limit);
-        } else if (status === 426) {
-          console.log("API upgrade required (free tier limit), using mock data");
-          return returnMockArticles(h, topic, limit);
-        }
-      }
-
-      // Fallback to mock data for any API error
-      console.log("API error occurred, using mock data");
-      return returnMockArticles(h, topic, limit);
+      return h.response(filteredArticles);
+    } else {
+      console.error("Unexpected API response format:", response.data);
+      return h
+        .response({
+          status: "error",
+          message: "Gagal mengambil artikel. Format respons tidak valid.",
+        })
+        .code(500);
     }
   } catch (error) {
-    console.error("Error in getArticles:", error.message);
+    console.error("Error fetching articles:", error.message);
 
-    // General fallback error with mock data
-    return returnMockArticles(h, topic, limit);
+    // Handle API rate limits or invalid key issues
+    if (error.response) {
+      const status = error.response.status;
+
+      if (status === 429) {
+        return h
+          .response({
+            status: "error",
+            message: "Batas penggunaan API tercapai. Silakan coba lagi nanti.",
+          })
+          .code(429);
+      } else if (status === 401) {
+        return h
+          .response({
+            status: "error",
+            message: "Kunci API tidak valid. Silakan periksa konfigurasi.",
+          })
+          .code(401);
+      } else if (status === 403) {
+        return h
+          .response({
+            status: "error",
+            message: "Akses ke API ditolak. Silakan periksa konfigurasi.",
+          })
+          .code(403);
+      }
+    }
+
+    // General fallback error
+    return h
+      .response({
+        status: "error",
+        message: "Gagal mengambil artikel.",
+      })
+      .code(500);
   }
 };
-
-/**
- * Helper function to return mock articles
- */
-function returnMockArticles(h, topic, limit) {
-  const mockArticles = [
-    {
-      title: "Cara Mengontrol Gula Darah Secara Alami",
-      summary:
-        "Berikut adalah beberapa tips alami untuk menjaga kadar gula darah tetap stabil, termasuk pola makan sehat, olahraga teratur, dan manajemen stres.",
-      url: "https://news.example.com/artikel-diabetes-1",
-      source: "Healthline",
-      publishedAt: "2025-05-28T12:00:00Z",
-      imageUrl: "https://example.com/images/diabetes-care.jpg",
-    },
-    {
-      title: "10 Makanan yang Baik untuk Penderita Diabetes",
-      summary:
-        "Diet sehat merupakan kunci pengelolaan diabetes. Artikel ini membahas makanan yang dapat membantu mengontrol gula darah seperti sayuran hijau, kacang-kacangan, dan ikan berlemak.",
-      url: "https://news.example.com/artikel-diabetes-2",
-      source: "Medical News Today",
-      publishedAt: "2025-05-25T09:30:00Z",
-      imageUrl: "https://example.com/images/diabetes-food.jpg",
-    },
-    {
-      title: "Penelitian Terbaru Tentang Pengobatan Diabetes",
-      summary:
-        "Para peneliti menemukan pendekatan baru untuk mengelola diabetes tipe 2 yang menjanjikan hasil lebih baik dengan efek samping minimal.",
-      url: "https://news.example.com/artikel-diabetes-3",
-      source: "Journal of Endocrinology",
-      publishedAt: "2025-05-20T14:45:00Z",
-      imageUrl: "https://example.com/images/diabetes-research.jpg",
-    },
-    {
-      title: "Olahraga yang Direkomendasikan untuk Penderita Diabetes",
-      summary:
-        "Aktivitas fisik yang tepat dapat membantu mengelola kadar gula darah. Berikut adalah rekomendasi olahraga untuk penderita diabetes seperti jalan kaki, berenang, dan yoga.",
-      url: "https://news.example.com/artikel-diabetes-4",
-      source: "Sports Medicine Today",
-      publishedAt: "2025-05-18T10:15:00Z",
-      imageUrl: "https://example.com/images/diabetes-exercise.jpg",
-    },
-    {
-      title: "Hubungan Stres dan Diabetes",
-      summary:
-        "Stres dapat memperburuk kondisi diabetes dengan meningkatkan kadar gula darah. Pelajari cara mengelola stres untuk kesehatan yang lebih baik.",
-      url: "https://news.example.com/artikel-diabetes-5",
-      source: "Psychology Today",
-      publishedAt: "2025-05-15T16:30:00Z",
-      imageUrl: "https://example.com/images/stress-diabetes.jpg",
-    },
-    {
-      title: "Tanda-tanda Awal Diabetes yang Sering Diabaikan",
-      summary:
-        "Mengenali gejala diabetes sejak dini sangat penting. Artikel ini membahas tanda-tanda seperti sering haus, sering buang air kecil, dan kelelahan berlebihan.",
-      url: "https://news.example.com/artikel-diabetes-6",
-      source: "Mayo Clinic",
-      publishedAt: "2025-05-12T08:20:00Z",
-      imageUrl: "https://example.com/images/diabetes-symptoms.jpg",
-    },
-    {
-      title: "Diabetes dan Kesehatan Jantung",
-      summary:
-        "Penderita diabetes memiliki risiko lebih tinggi terkena penyakit jantung. Pelajari cara melindungi kesehatan jantung Anda dengan pengelolaan diabetes yang baik.",
-      url: "https://news.example.com/artikel-diabetes-7",
-      source: "American Heart Association",
-      publishedAt: "2025-05-10T11:45:00Z",
-      imageUrl: "https://example.com/images/diabetes-heart.jpg",
-    },
-    {
-      title: "Mitos dan Fakta Seputar Diabetes",
-      summary:
-        "Banyak kesalahpahaman tentang diabetes yang beredar di masyarakat. Artikel ini membongkar mitos dan memberikan fakta yang benar tentang penyakit ini.",
-      url: "https://news.example.com/artikel-diabetes-8",
-      source: "Diabetes.org",
-      publishedAt: "2025-05-08T15:30:00Z",
-      imageUrl: "https://example.com/images/diabetes-myths.jpg",
-    },
-  ];
-
-  // Filter and cache mock articles
-  cache.articles = mockArticles;
-  cache.timestamp = Date.now();
-
-  const filteredArticles = filterArticles(mockArticles, topic, limit);
-  return h.response(filteredArticles);
-}
 
 /**
  * Helper function to check if text contains diabetes-related terms
