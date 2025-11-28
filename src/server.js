@@ -13,7 +13,7 @@ const init = async () => {
     host: "0.0.0.0",
     routes: {
       cors: {
-        origin: ["*"], // Allow all origins in development
+        origin: ["*"],
         headers: ["Accept", "Content-Type", "Authorization"],
         additionalExposedHeaders: ["WWW-Authenticate"],
       },
@@ -30,8 +30,6 @@ const init = async () => {
   server.auth.strategy("jwt", "jwt", {
     key: config.jwtSecret,
     validate: async (decoded, request) => {
-      // Simple validation - just checking if token can be decoded
-      // In a real app, you might want to check if the user still exists in the database
       try {
         return { isValid: true, credentials: decoded };
       } catch (error) {
@@ -47,7 +45,7 @@ const init = async () => {
   // Register routes
   await server.register(routes);
 
-  // Add a route for the root path
+  // Add root path route
   server.route({
     method: "GET",
     path: "/",
@@ -59,13 +57,13 @@ const init = async () => {
       };
     },
     options: { auth: false },
-  }); // Initialize the ML model
+  });
+
+  // Initialize ML model
   try {
-    // Check if the initialize method exists in DiabetesPredictionService
     if (typeof DiabetesPredictionService.initialize === "function") {
       await DiabetesPredictionService.initialize();
     } else {
-      // If not, use the predictionModel directly
       const predictionModel = require("./utils/predictionModel");
       await predictionModel.initModel();
     }
@@ -73,6 +71,18 @@ const init = async () => {
   } catch (error) {
     console.error("Failed to initialize ML model:", error);
   }
+
+  // ===============================
+  // LOGGING SETUP
+  // ===============================
+  // Log every request
+  server.events.on("response", (request) => {
+    const { method, path } = request;
+    const statusCode = request.response ? request.response.statusCode : "N/A";
+    console.log(
+      `[${new Date().toISOString()}] ${method.toUpperCase()} ${path} --> ${statusCode}`
+    );
+  });
 
   // Start the server
   await server.start();
@@ -86,10 +96,10 @@ process.on("unhandledRejection", (err) => {
   process.exit(1);
 });
 
-// Export the init function
+// Export init function
 module.exports = { init };
 
-// If this file is run directly, start the server
+// Run server if this file is executed directly
 if (require.main === module) {
   init().catch((err) => {
     console.error("Error starting server:", err);
